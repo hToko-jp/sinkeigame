@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>神経衰弱ゲーム</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* カードのフリップアニメーション用のスタイル */
+        .perspective-1000 {
+            perspective: 1000px;
+        }
+        
+        .card-inner {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            text-align: center;
+            transition: transform 0.6s;
+            transform-style: preserve-3d;
+        }
+
+        .card.flipped .card-inner {
+            transform: rotateY(180deg);
+        }
+
+        .card.matched .card-front {
+            background-color: #dcfce7; /* green-100 */
+            border-color: #22c55e; /* green-500 */
+        }
+
+        .card-face {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            -webkit-backface-visibility: hidden;
+            backface-visibility: hidden;
+            border-radius: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            border: 2px solid transparent;
+        }
+
+        /* カードの裏面（模様） */
+        .card-back {
+            background: linear-gradient(135deg, #6366f1 25%, #4f46e5 25%, #4f46e5 50%, #6366f1 50%, #6366f1 75%, #4f46e5 75%, #4f46e5 100%);
+            background-size: 20px 20px;
+            color: white;
+            cursor: pointer;
+        }
+
+        .card-back:hover {
+            opacity: 0.9;
+        }
+
+        /* カードの表面（絵柄） */
+        .card-front {
+            background-color: white;
+            transform: rotateY(180deg);
+            border-color: #e2e8f0;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col items-center py-8 px-4 font-sans text-gray-800">
+
+    <!-- ヘッダーエリア -->
+    <header class="text-center mb-6">
+        <h1 class="text-3xl font-bold text-indigo-600 mb-2">神経衰弱</h1>
+        <p class="text-sm text-gray-500">同じ絵柄のペアを見つけてください</p>
+    </header>
+
+    <!-- スコアボード -->
+    <div class="flex gap-6 mb-6 bg-white p-4 rounded-lg shadow-sm w-full max-w-md justify-around">
+        <div class="text-center">
+            <span class="block text-xs text-gray-500 uppercase font-bold">時間</span>
+            <span id="timer" class="text-xl font-mono font-bold text-indigo-600">00:00</span>
+        </div>
+        <div class="text-center">
+            <span class="block text-xs text-gray-500 uppercase font-bold">手数</span>
+            <span id="moves" class="text-xl font-mono font-bold text-indigo-600">0</span>
+        </div>
+        <div class="text-center">
+            <button onclick="restartGame()" class="bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-bold py-1 px-4 rounded transition-colors mt-1">
+                リセット
+            </button>
+        </div>
+    </div>
+
+    <!-- ゲームボード (4x4グリッド) -->
+    <div id="game-board" class="grid grid-cols-4 gap-3 w-full max-w-md aspect-square mb-8 perspective-1000">
+        <!-- JavaScriptでカードがここに生成されます -->
+    </div>
+
+    <!-- クリアメッセージ（モーダル） -->
+    <div id="win-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-white p-8 rounded-xl shadow-2xl text-center max-w-sm mx-4 transform transition-all scale-100">
+            <div class="text-5xl mb-4">🎉</div>
+            <h2 class="text-2xl font-bold text-gray-800 mb-2">ゲームクリア！</h2>
+            <p class="text-gray-600 mb-6">
+                時間: <span id="final-time" class="font-bold">00:00</span><br>
+                手数: <span id="final-moves" class="font-bold">0</span>
+            </p>
+            <button onclick="restartGame()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition-colors">
+                もう一度遊ぶ
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // ゲームの設定
+        const emojis = ['🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼']; // 8ペア = 16枚
+        let cards = [];
+        let hasFlippedCard = false;
+        let lockBoard = false;
+        let firstCard, secondCard;
+        let moves = 0;
+        let matchedPairs = 0;
+        let timerInterval;
+        let seconds = 0;
+        let gameStarted = false;
+
+        const gameBoard = document.getElementById('game-board');
+        const movesDisplay = document.getElementById('moves');
+        const timerDisplay = document.getElementById('timer');
+        const winModal = document.getElementById('win-modal');
+        const finalTimeDisplay = document.getElementById('final-time');
+        const finalMovesDisplay = document.getElementById('final-moves');
+
+        // ゲームの初期化
+        function initGame() {
+            // 変数リセット
+            moves = 0;
+            matchedPairs = 0;
+            seconds = 0;
+            hasFlippedCard = false;
+            lockBoard = false;
+            firstCard = null;
+            secondCard = null;
+            gameStarted = false;
+            
+            clearInterval(timerInterval);
+            timerDisplay.innerText = '00:00';
+            movesDisplay.innerText = '0';
+            winModal.classList.add('hidden');
+            
+            // カードの生成とシャッフル
+            cards = [...emojis, ...emojis]; // ペアを作成
+            shuffle(cards);
+            
+            // 盤面の描画
+            gameBoard.innerHTML = '';
+            cards.forEach((emoji, index) => {
+                const cardElement = createCardElement(emoji, index);
+                gameBoard.appendChild(cardElement);
+            });
+        }
+
+        // カード要素の作成
+        function createCardElement(emoji, index) {
+            const card = document.createElement('div');
+            card.classList.add('card', 'relative', 'w-full', 'h-full', 'cursor-pointer');
+            card.dataset.emoji = emoji;
+            card.dataset.index = index;
+
+            // HTML構造: card > card-inner > (card-front + card-back)
+            card.innerHTML = `
+                <div class="card-inner w-full h-full relative transition-transform duration-500">
+                    <div class="card-front card-face bg-white rounded-lg border-2 border-gray-200 flex items-center justify-center text-4xl">
+                        ${emoji}
+                    </div>
+                    <div class="card-back card-face bg-indigo-500 rounded-lg flex items-center justify-center">
+                        <span class="opacity-0">?</span>
+                    </div>
+                </div>
+            `;
+
+            card.addEventListener('click', flipCard);
+            return card;
+        }
+
+        // シャッフル関数 (Fisher-Yates)
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        // 時間のフォーマット
+        function formatTime(totalSeconds) {
+            const m = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+            const s = (totalSeconds % 60).toString().padStart(2, '0');
+            return `${m}:${s}`;
+        }
+
+        // タイマー開始
+        function startTimer() {
+            if (!gameStarted) {
+                gameStarted = true;
+                timerInterval = setInterval(() => {
+                    seconds++;
+                    timerDisplay.innerText = formatTime(seconds);
+                }, 1000);
+            }
+        }
+
+        // カードをめくる処理
+        function flipCard() {
+            if (lockBoard) return;
+            if (this === firstCard) return; // 同じカードのクリック防止
+
+            startTimer(); // 最初のクリックでタイマー開始
+
+            this.classList.add('flipped');
+
+            if (!hasFlippedCard) {
+                // 1枚目
+                hasFlippedCard = true;
+                firstCard = this;
+                return;
+            }
+
+            // 2枚目
+            secondCard = this;
+            incrementMoves();
+            checkForMatch();
+        }
+
+        // マッチ判定
+        function checkForMatch() {
+            let isMatch = firstCard.dataset.emoji === secondCard.dataset.emoji;
+
+            isMatch ? disableCards() : unflipCards();
+        }
+
+        // 一致した場合
+        function disableCards() {
+            lockBoard = true; // アニメーション完了までロック
+            
+            // 少し遅らせてmatchedクラスを追加（スタイル変更用）
+            setTimeout(() => {
+                firstCard.classList.add('matched');
+                secondCard.classList.add('matched');
+                
+                // イベントリスナー削除はCSSのpointer-events制御でも可能だが念のため
+                firstCard.removeEventListener('click', flipCard);
+                secondCard.removeEventListener('click', flipCard);
+
+                resetBoard();
+                matchedPairs++;
+                
+                // クリア判定
+                if (matchedPairs === emojis.length) {
+                    gameWon();
+                }
+            }, 500);
+        }
+
+        // 一致しなかった場合
+        function unflipCards() {
+            lockBoard = true;
+
+            setTimeout(() => {
+                firstCard.classList.remove('flipped');
+                secondCard.classList.remove('flipped');
+                resetBoard();
+            }, 1000); // 1秒間見せる
+        }
+
+        // 盤面状態のリセット
+        function resetBoard() {
+            [hasFlippedCard, lockBoard] = [false, false];
+            [firstCard, secondCard] = [null, null];
+        }
+
+        // 手数の更新
+        function incrementMoves() {
+            moves++;
+            movesDisplay.innerText = moves;
+        }
+
+        // ゲームクリア処理
+        function gameWon() {
+            clearInterval(timerInterval);
+            finalTimeDisplay.innerText = timerDisplay.innerText;
+            finalMovesDisplay.innerText = moves;
+            
+            // 少し待ってからモーダル表示
+            setTimeout(() => {
+                winModal.classList.remove('hidden');
+            }, 500);
+        }
+
+        // ゲームのリセット（再開）
+        function restartGame() {
+            initGame();
+        }
+
+        // 初回起動
+        initGame();
+    </script>
+</body>
+</html>
