@@ -28,6 +28,12 @@
             background-color: #dcfce7; /* green-100 */
             border-color: #22c55e; /* green-500 */
         }
+        
+        /* ジョーカーがめくられた時のスタイル */
+        .card.joker-flipped .card-front {
+            background-color: #fee2e2; /* red-100 */
+            border-color: #ef4444; /* red-500 */
+        }
 
         .card-face {
             position: absolute;
@@ -39,7 +45,8 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 2.5rem;
+            /* フォントサイズを少し小さく調整 */
+            font-size: 2rem; 
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
             border: 2px solid transparent;
         }
@@ -89,8 +96,8 @@
         </div>
     </div>
 
-    <!-- ゲームボード (4x4グリッド) -->
-    <div id="game-board" class="grid grid-cols-4 gap-3 w-full max-w-md aspect-square mb-8 perspective-1000">
+    <!-- ゲームボード (5x5グリッドに変更) -->
+    <div id="game-board" class="grid grid-cols-5 gap-2 w-full max-w-md aspect-square mb-8 perspective-1000">
         <!-- JavaScriptでカードがここに生成されます -->
     </div>
 
@@ -111,7 +118,9 @@
 
     <script>
         // ゲームの設定
-        const emojis = ['🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼']; // 8ペア = 16枚
+        // 12ペア + ジョーカー1枚 = 25枚
+        const emojis = ['🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯', '🦁', '🐮']; 
+        const jokerEmoji = '🤡';
         let cards = [];
         let hasFlippedCard = false;
         let lockBoard = false;
@@ -146,8 +155,8 @@
             movesDisplay.innerText = '0';
             winModal.classList.add('hidden');
             
-            // カードの生成とシャッフル
-            cards = [...emojis, ...emojis]; // ペアを作成
+            // カードの生成とシャッフル (12ペア + ジョーカー)
+            cards = [...emojis, ...emojis, jokerEmoji]; 
             shuffle(cards);
             
             // 盤面の描画
@@ -161,14 +170,15 @@
         // カード要素の作成
         function createCardElement(emoji, index) {
             const card = document.createElement('div');
+            // gap-2 に対応するため、カードサイズをCSSグリッドに任せる
             card.classList.add('card', 'relative', 'w-full', 'h-full', 'cursor-pointer');
             card.dataset.emoji = emoji;
             card.dataset.index = index;
 
-            // HTML構造: card > card-inner > (card-front + card-back)
+            // HTML構造
             card.innerHTML = `
                 <div class="card-inner w-full h-full relative transition-transform duration-500">
-                    <div class="card-front card-face bg-white rounded-lg border-2 border-gray-200 flex items-center justify-center text-4xl">
+                    <div class="card-front card-face bg-white rounded-lg border-2 border-gray-200 flex items-center justify-center">
                         ${emoji}
                     </div>
                     <div class="card-back card-face bg-indigo-500 rounded-lg flex items-center justify-center">
@@ -212,10 +222,18 @@
         function flipCard() {
             if (lockBoard) return;
             if (this === firstCard) return; // 同じカードのクリック防止
+            
+            // 既にマッチしたカードは無視
+            if (this.classList.contains('matched')) return;
 
             startTimer(); // 最初のクリックでタイマー開始
 
             this.classList.add('flipped');
+
+            // ジョーカーを引いた場合の演出（赤くなる）
+            if (this.dataset.emoji === jokerEmoji) {
+                this.classList.add('joker-flipped');
+            }
 
             if (!hasFlippedCard) {
                 // 1枚目
@@ -232,6 +250,12 @@
 
         // マッチ判定
         function checkForMatch() {
+            // ジョーカーが含まれている場合はマッチしない
+            if (firstCard.dataset.emoji === jokerEmoji || secondCard.dataset.emoji === jokerEmoji) {
+                unflipCards();
+                return;
+            }
+
             let isMatch = firstCard.dataset.emoji === secondCard.dataset.emoji;
 
             isMatch ? disableCards() : unflipCards();
@@ -239,21 +263,16 @@
 
         // 一致した場合
         function disableCards() {
-            lockBoard = true; // アニメーション完了までロック
+            lockBoard = true; 
             
-            // 少し遅らせてmatchedクラスを追加（スタイル変更用）
             setTimeout(() => {
                 firstCard.classList.add('matched');
                 secondCard.classList.add('matched');
                 
-                // イベントリスナー削除はCSSのpointer-events制御でも可能だが念のため
-                firstCard.removeEventListener('click', flipCard);
-                secondCard.removeEventListener('click', flipCard);
-
                 resetBoard();
                 matchedPairs++;
                 
-                // クリア判定
+                // クリア判定 (ジョーカー以外の全てのペアを見つけたらクリア)
                 if (matchedPairs === emojis.length) {
                     gameWon();
                 }
@@ -265,8 +284,8 @@
             lockBoard = true;
 
             setTimeout(() => {
-                firstCard.classList.remove('flipped');
-                secondCard.classList.remove('flipped');
+                firstCard.classList.remove('flipped', 'joker-flipped');
+                secondCard.classList.remove('flipped', 'joker-flipped');
                 resetBoard();
             }, 1000); // 1秒間見せる
         }
@@ -288,11 +307,19 @@
             clearInterval(timerInterval);
             finalTimeDisplay.innerText = timerDisplay.innerText;
             finalMovesDisplay.innerText = moves;
+
+            // 残っているジョーカーをめくる演出
+            const allCards = document.querySelectorAll('.card');
+            allCards.forEach(card => {
+                if (!card.classList.contains('flipped')) {
+                    card.classList.add('flipped', 'joker-flipped');
+                }
+            });
             
             // 少し待ってからモーダル表示
             setTimeout(() => {
                 winModal.classList.remove('hidden');
-            }, 500);
+            }, 1500);
         }
 
         // ゲームのリセット（再開）
